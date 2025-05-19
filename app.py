@@ -4,10 +4,10 @@ import pandas as pd
 
 app = Flask(__name__)
 
-# Load your trained model (make sure the .pkl file is in the same directory)
+# Load your trained model
 model = joblib.load('random_forest_model.pkl')
 
-# List of expected features after one-hot encoding (from your training)
+# Expected features after one-hot encoding (make sure this matches your training)
 EXPECTED_FEATURES = [
     'age', 'Medu', 'Fedu', 'traveltime', 'studytime', 'failures', 'famrel', 'freetime',
     'goout', 'Dalc', 'Walc', 'health', 'absences', 'G1', 'G2',
@@ -28,13 +28,38 @@ def predict():
     try:
         input_data = request.get_json()
 
-        # Convert input into DataFrame (one row)
+        # Optional: preprocess input_data keys to match your model feature names
+        # Example: 'internet' yes/no to 'internet_yes'/'internet_no' etc.
+        # Here’s a quick manual transform for the yes/no fields from your PHP form:
+        for col_prefix in ['internet', 'romantic']:
+            val = input_data.get(col_prefix, '').lower()
+            input_data[col_prefix + '_yes'] = 1 if val == 'yes' else 0
+            input_data[col_prefix + '_no'] = 1 if val == 'no' else 0
+            input_data.pop(col_prefix, None)
+
+        # Similarly, convert categorical features to one-hot format with keys matching EXPECTED_FEATURES
+        # For example, school: 'GP' or 'MS' -> 'school_GP' or 'school_MS'
+        if 'school' in input_data:
+            school_val = input_data.pop('school')
+            input_data['school_GP'] = 1 if school_val == 'GP' else 0
+            input_data['school_MS'] = 1 if school_val == 'MS' else 0
+
+        if 'sex' in input_data:
+            sex_val = input_data.pop('sex')
+            input_data['sex_F'] = 1 if sex_val == 'F' else 0
+            input_data['sex_M'] = 1 if sex_val == 'M' else 0
+
+        # Jobs
+        for parent in ['Mjob', 'Fjob']:
+            val = input_data.pop(parent, None)
+            for job_option in ['at_home', 'health', 'other', 'services', 'teacher']:
+                key = f"{parent}_{job_option}"
+                input_data[key] = 1 if val == job_option else 0
+
+        # Create DataFrame from input
         df = pd.DataFrame([input_data])
 
-        # One-hot encode categorical features (your training used get_dummies)
-        df = pd.get_dummies(df)
-
-        # Add missing columns with default 0
+        # Add missing expected columns with 0
         for col in EXPECTED_FEATURES:
             if col not in df.columns:
                 df[col] = 0
@@ -45,6 +70,7 @@ def predict():
         prediction = model.predict(df)[0]
 
         return jsonify({'prediction': int(prediction)})
+
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
